@@ -1,0 +1,67 @@
+name: Deploy to GitHub Pages
+
+# Builds and publishes the site whenever main changes (or on demand).
+# Required repository settings (see README, "Deploy the frontend"):
+#   Settings > Pages > Source: "GitHub Actions"
+#   Settings > Secrets and variables > Actions > Variables:
+#     VITE_SUPABASE_URL       https://<project-ref>.supabase.co
+#     VITE_SUPABASE_ANON_KEY  the project's anon / publishable key (public by design)
+# Never add the service_role / secret key here.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check configuration
+        run: |
+          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "::error::Set the VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY repository variables (see README)."
+            exit 1
+          fi
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Refuse to publish a secret key
+        run: |
+          if grep -rqE 'sb_secret_|"role":"service_role"' dist/assets/*.js; then
+            echo "::error::A secret key appears in the build output. Use the anon / publishable key."
+            exit 1
+          fi
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

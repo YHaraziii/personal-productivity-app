@@ -1,0 +1,11 @@
+# Minimal Supabase CLI configuration, used only if you manage the project with
+# the Supabase CLI (`npx supabase link` / `npx supabase db push`).
+# Hosted projects are configured in the dashboard; see README step 4.
+project_id = "personal-productivity-dashboard"
+
+[auth]
+# Public registration is disabled. Accounts are created by the owner only.
+enable_signup = false
+
+[auth.email]
+enable_signup = false

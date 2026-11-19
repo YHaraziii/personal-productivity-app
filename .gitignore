@@ -1,0 +1,26 @@
+node_modules/
+dist/
+dev-dist/
+coverage/
+test-results/
+playwright-report/
+blob-report/
+.vite/
+
+# Secrets and local configuration: never commit these.
+.env
+.env.*
+!.env.example
+supabase/.temp/
+supabase/.branches/
+supabase/.env
+
+# Local data, logs and editor files
+*.local
+*.log
+*.sqlite
+*.db
+.DS_Store
+.idea/
+.vscode/
+dist-e2e/
