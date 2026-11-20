@@ -80,7 +80,7 @@ no OAuth or magic-link redirects to configure.
 **GitHub Pages compatibility.** I checked whether GitHub Pages can host this app, and it can:
 - **Static hosting:** the whole app is static.
 - **Auth:** e-mail and password sign-in needs no callback URL.
-- **Routing:** there is one route, and asset paths are relative, so it works under `/<repo>/`.
+- **Routing:** there is one route, and the build is configured for the project-site subpath `/personal-productivity-app/`.
 - **Security headers:** Pages cannot send them, so a Content-Security-Policy `<meta>` tag is generated at build time. It allows scripts only from the site itself and network requests only to your Supabase project.
 - **Repository visibility:** on GitHub Free, Pages generally requires a **public** repository. That is acceptable because the repository contains no secrets. If you want a private repository on a free plan, use Cloudflare Pages or Netlify instead. The same `npm run build` output (`dist/`) works there unchanged.
 
@@ -121,7 +121,7 @@ Supabase project and point `.env.local` at it.
 1. Create a project at https://supabase.com/dashboard. Choose a region near you and save the database password in your password manager. The app never needs the database password.
 2. **Apply the database migrations** (section 7).
 3. **Disable public registration**: open **Authentication → Sign In / Providers**. Turn **off** "Allow new users to sign up". Keep the **Email** provider enabled.
-4. Open **Authentication → URL Configuration**. Set **Site URL** to your deployed URL, e.g. `https://<user>.github.io/<repo>/`. The app uses no redirects, but this keeps Supabase's own e-mails consistent.
+4. Open **Authentication → URL Configuration**. Set **Site URL** to `https://yharaziii.github.io/personal-productivity-app/`. The app uses no redirects, but this keeps Supabase's own e-mails consistent.
 5. **Create your account** (section 9).
 
 ## 7. Database migrations and schema setup
@@ -175,7 +175,7 @@ Public sign-up stays disabled the whole time.
 
 1. Supabase dashboard → **Authentication → Users → Add user → Create new user**.
 2. Enter your e-mail and a strong password. Tick **Auto Confirm User**.
-3. Open **SQL Editor** and run `supabase/provision_user.sql`, with `you@example.com` replaced by your e-mail. This puts the account on the allowlist.
+3. Open **SQL Editor → New query**, paste `supabase/provision_user.sql`, and replace `you@example.com` on the line marked `<-- YOUR E-MAIL` with your e-mail. Make that edit only in the SQL Editor, never in the repository. Run it. This puts the account on the allowlist, and the script stops with an error if the placeholder is unchanged or no such user exists.
 4. Sign in on the site.
 
 No password is stored in this repository or in any configuration file.
@@ -183,8 +183,8 @@ No password is stored in this repository or in any configuration file.
 ## 10. GitHub repository setup
 
 ```bash
-git remote add origin https://github.com/<you>/<repo>.git
-git push -u origin main         # or push this branch and open a pull request into main
+git remote add origin https://github.com/YHaraziii/personal-productivity-app.git
+git push -u origin build-app    # deploys: the Pages workflow runs on build-app for now
 ```
 
 The repository contains no secrets. `.gitignore` excludes `.env*` files,
@@ -193,16 +193,19 @@ build output, test artifacts and local databases.
 ## 11. Deploy the frontend (GitHub Pages)
 
 1. GitHub → repository → **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-2. **Settings → Secrets and variables → Actions → Variables** tab. Add two repository variables:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-3. Push to `main`, or run the **Deploy to GitHub Pages** workflow manually. The workflow:
+2. **Settings → Environments → `github-pages` → Deployment branches and tags.** By default only the default branch (`main`) may deploy. Add a rule for `build-app`. If the environment does not exist yet, it appears after step 1 or after the first workflow run. Re-run the workflow after adding the rule.
+3. **Settings → Secrets and variables → Actions → Variables** tab. Add two repository **variables** (not secrets; both values are public by design):
+   - `VITE_SUPABASE_URL`: `https://<project-ref>.supabase.co`
+   - `VITE_SUPABASE_ANON_KEY`: the `anon` / publishable key. **Never** the `service_role` / secret key: the workflow refuses it.
+4. Push to `build-app`, or run the **Deploy to GitHub Pages** workflow manually (Actions tab → workflow → Run workflow → branch `build-app`). The workflow:
+   - installs dependencies with `npm ci`;
+   - refuses a secret or service_role key;
    - type-checks the code;
    - runs the unit and database tests;
    - builds the site;
    - checks that no secret key is in the output;
    - publishes the site.
-4. Open `https://<you>.github.io/<repo>/`. Then verify the deployment:
+5. Open `https://yharaziii.github.io/personal-productivity-app/`. Then verify the deployment:
    - Sign in, create a group and a task, and wait for **Saved**.
    - Reload the page, or open it in another browser: the task is there.
    - Sign out, then reload: only the sign-in form is shown.
@@ -214,9 +217,10 @@ every pull request.
 ## 12. Routing and authentication callbacks
 
 - The app has one screen and no client-side routes, so no 404 fallback is needed.
-- Asset URLs are relative (`base: './'`), so the same build works at `/<repo>/` or on a custom domain.
+- Production builds use `base: '/personal-productivity-app/'` (`vite.config.ts`), so assets, the manifest and the service worker (scope `/personal-productivity-app/`) all live under the project-site path. The dev server and the e2e build use the root path.
+- For a custom domain or a different repository name, set `PAGES_BASE_PATH` (for example `/`) in the deploy workflow.
 - E-mail + password sign-in uses no redirect callbacks.
-- If you add a custom domain, update the Supabase **Site URL**. No other change is needed: the CSP is derived from `VITE_SUPABASE_URL` at build time.
+- If you add a custom domain, also update the Supabase **Site URL**. The CSP is derived from `VITE_SUPABASE_URL` at build time.
 
 ## 13. Local testing
 
@@ -251,6 +255,8 @@ npm run test:e2e         # browser tests (Playwright)
 | "Sync failed" persists | Click **Review** to see rejected changes. Retry, or discard a change explicitly. Nothing is dropped automatically. |
 | Old version after deploying | A banner offers **Reload to update**. The app never reloads by itself while you might be typing. |
 | Pages deploy fails at "Check configuration" | Add the two repository **variables**, not secrets, from section 11. |
+| Deploy job fails: "Branch build-app is not allowed to deploy to github-pages due to environment protection rules" | Add `build-app` under Settings → Environments → `github-pages` → Deployment branches (section 11, step 2), then re-run the workflow. |
+| Page loads blank, assets 404 | The site must be opened at `/personal-productivity-app/`. If the repository was renamed, set `PAGES_BASE_PATH` in the deploy workflow. |
 
 ## 15. Known limitations and free-tier constraints
 
@@ -313,7 +319,7 @@ Make a backup before major changes and keep a recent copy outside the browser.
 
 ## 17. Updating and maintaining
 
-- **Code changes:** develop on a branch, run `npm run typecheck && npm test && npm run test:e2e`, and merge to `main` to deploy.
+- **Code changes:** develop on a branch, run `npm run typecheck && npm test && npm run test:e2e`, and push to `build-app` to deploy. When you later deploy from `main`, change `branches:` in `.github/workflows/deploy.yml` and the `github-pages` environment rule.
 - **Database changes:** add a **new** migration file, never edit applied ones. Apply it as in section 7, then run `verify_security.sql` again. Every new table needs RLS, a `user_id` column and the same policy pattern.
 - **Backup format changes:** bump `BACKUP_VERSION` in `src/lib/backup.ts` and add a migration step in `migrate()`, so older backups still import.
 - **Dependencies:** `npm outdated`, then update and run all tests. `npm audit` reports advisories. At the time of writing, a few moderate advisories were in development-only tooling.
@@ -338,4 +344,5 @@ tests/
   db/ data/     Vitest against PGlite with the real migrations
   e2e/          Playwright
 docs/           ARCHITECTURE.md, BACKUP_FORMAT.md
+scripts/        check-no-secrets.mjs (deploy guard: fails if a secret key is in dist/)
 ```

@@ -1,16 +1,20 @@
 name: Deploy to GitHub Pages
 
-# Builds and publishes the site whenever main changes (or on demand).
+# Builds the app and publishes it to
+#   https://yharaziii.github.io/personal-productivity-app/
+# whenever the build-app branch changes (or when run manually).
+#
 # Required repository settings (see README, "Deploy the frontend"):
 #   Settings > Pages > Source: "GitHub Actions"
+#   Settings > Environments > github-pages > Deployment branches: allow "build-app"
 #   Settings > Secrets and variables > Actions > Variables:
 #     VITE_SUPABASE_URL       https://<project-ref>.supabase.co
 #     VITE_SUPABASE_ANON_KEY  the project's anon / publishable key (public by design)
-# Never add the service_role / secret key here.
+# Never add the service_role / secret key anywhere in this repository.
 
 on:
   push:
-    branches: [main]
+    branches: [build-app]
   workflow_dispatch:
 
 permissions:
@@ -18,6 +22,7 @@ permissions:
   pages: write
   id-token: write
 
+# One deployment at a time; a newer push waits instead of cancelling a deploy mid-way.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -29,28 +34,46 @@ jobs:
     env:
       VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
       VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+      PAGES_BASE_PATH: /personal-productivity-app/
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci
       - name: Check configuration
         run: |
           if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
             echo "::error::Set the VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY repository variables (see README)."
             exit 1
           fi
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
-      - name: Refuse to publish a secret key
+          case "$VITE_SUPABASE_URL" in
+            https://*) ;;
+            *) echo "::error::VITE_SUPABASE_URL must start with https://"; exit 1 ;;
+          esac
+      - name: Refuse a secret / service-role key
         run: |
-          if grep -rqE 'sb_secret_|"role":"service_role"' dist/assets/*.js; then
-            echo "::error::A secret key appears in the build output. Use the anon / publishable key."
+          key="$VITE_SUPABASE_ANON_KEY"
+          case "$key" in
+            sb_secret_*) echo "::error::VITE_SUPABASE_ANON_KEY is a secret key. Use the anon / publishable key and rotate the secret key."; exit 1 ;;
+          esac
+          # Legacy JWT keys: inspect the payload's role claim.
+          payload=$(printf '%s' "$key" | cut -d. -f2 | tr '_-' '/+')
+          while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="$payload="; done
+          if printf '%s' "$payload" | base64 -d 2>/dev/null | grep -q '"role" *: *"service_role"'; then
+            echo "::error::VITE_SUPABASE_ANON_KEY is the service_role key. Use the anon key and rotate the service_role key."
             exit 1
           fi
+      - name: Type-check
+        run: npm run typecheck
+      - name: Unit, component and database tests
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Refuse to publish a secret key
+        run: node scripts/check-no-secrets.mjs dist
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

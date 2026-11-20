@@ -41,10 +41,23 @@ function contentSecurityPolicy(mode: string): Plugin {
   }
 }
 
-// `base: './'` keeps every asset URL relative, so the same build works at
-// https://<user>.github.io/<repo>/ and at a custom domain without changes.
-export default defineConfig(({ mode }) => ({
-  base: './',
+/**
+ * Public path of the production site. It is served by GitHub Pages as a
+ * project site at https://yharaziii.github.io/personal-productivity-app/, so
+ * every asset, the service worker and the manifest live under that subpath.
+ * Set PAGES_BASE_PATH (e.g. "/" for a custom domain) to override it.
+ * The dev server and the e2e test build keep relative/root paths.
+ */
+const PAGES_BASE_PATH = '/personal-productivity-app/'
+
+function basePath(command: 'build' | 'serve'): string {
+  if (command !== 'build' || process.env.VITE_E2E === 'true') return command === 'build' ? './' : '/'
+  const base = process.env.PAGES_BASE_PATH?.trim() || PAGES_BASE_PATH
+  return base.endsWith('/') ? base : `${base}/`
+}
+
+export default defineConfig(({ mode, command }) => ({
+  base: basePath(command),
   plugins: [
     react(),
     contentSecurityPolicy(mode),
@@ -88,6 +101,8 @@ export default defineConfig(({ mode }) => ({
           environment: 'jsdom',
           include: ['tests/unit/**/*.test.{ts,tsx}', 'tests/ui/**/*.test.{ts,tsx}'],
           setupFiles: ['tests/helpers/setup-dom.ts'],
+          // Component tests can be slowed by the database tests running in parallel.
+          testTimeout: 15000,
           env: { TZ: 'America/New_York' },
         },
       },
